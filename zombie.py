@@ -121,17 +121,42 @@ class Zombie:
 
     def move_to_boy(self, r=0.5):
         self.state='Walk'
-        self.move_slightly_to(play_mode.boy.x,play_mode.boy.y)
-        if self.distance_less_than(self.tx,self.ty,play_mode.boy.x,play_mode.boy.y,r):
+
+        self.move_slightly_to(play_mode.boy.x, play_mode.boy.y)
+
+
+        if self.distance_less_than(play_mode.boy.x,play_mode.boy.y,self.x,self.y,r):
             return BehaviorTree.SUCCESS
         else:
             return BehaviorTree.RUNNING
 
+    def run_away_from_boy(self,r=8):
+        self.state='Walk'
+
+        # 좀비 위치에서 소년 위치까지의 벡터
+        to_boy_vector = (play_mode.boy.x - self.x, play_mode.boy.y - self.y)
+        # 좀비 위치에서 소년까지의 각도
+        to_boy_dir = math.atan2(to_boy_vector[1], to_boy_vector[0])
+
+        # 좀비 현재 위치에서 소년까지의 벡터를 빼서 반대로 이동하도록
+        self.move_slightly_to(self.x - math.cos(to_boy_dir), self.y - math.sin(to_boy_dir))
+
+        if self.distance_less_than(play_mode.boy.x,play_mode.boy.y,self.x,self.y,r):
+            return BehaviorTree.RUNNING
+        else:
+            return BehaviorTree.SUCCESS
 
     def get_patrol_location(self):
         self.tx, self.ty = self.patrol_locations[self.loc_no]
         self.loc_no = (self.loc_no+1) % len(self.patrol_locations)
         return BehaviorTree.SUCCESS
+
+    def ball_count_comparison(self):
+        if self.ball_count >= play_mode.boy.ball_count:
+            return BehaviorTree.SUCCESS
+        else:
+            return BehaviorTree.FAIL
+
 
     def build_behavior_tree(self):
         a1 = Action('Set target location',self.set_target_location,500,50) # action 노드 생성
@@ -141,20 +166,29 @@ class Zombie:
 
         a3 = Action('Set random location',self.set_random_location)
 
-
         SEQ_wander = Sequence('Wander',a3,a2)
 
 
         c1 = Condition('소년이 근처에 있는가',self.is_boy_nearby,7)
         a4 = Action('소년한테 이동',self.move_to_boy)
 
-        SEQ_chase_boy = Sequence('소년을 추적',c1,a4)
-
-        SEL_chase_or_wander = Selector('추적 또는 배회',SEQ_chase_boy,SEQ_wander)
 
         a5 = Action('순찰 위치 가져오기',self.get_patrol_location)
 
-        root = SEQ_patrol = Sequence('순찰',a5,a2)
+        SEQ_patrol = Sequence('순찰',a5,a2)
+
+        a6 = Action('소년에게서 도망치기',self.run_away_from_boy)
+
+        c2 = Condition('좀비가 소년보다 공이 더 많은가',self.ball_count_comparison)
+
+        SEQ_chase_boy = Sequence('좀비가 공이 더 많으면 소년 쫓아가기',c2,a4)
+
+        SEL_chase_or_runaway = Selector('소년 추적/도망',SEQ_chase_boy,a6)
+
+        SEQ_boy_in_zone = Sequence('소년이 구역 안에 있다면 추적/도망',c1,SEL_chase_or_runaway)
+
+
+        root = SEL_chase_or_wander = Selector('구역 안에 있음 또는 배회',SEQ_boy_in_zone,SEQ_wander)
 
         self.bt = BehaviorTree(root)
         pass
